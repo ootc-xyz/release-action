@@ -1,0 +1,96 @@
+name: Test Mock Release Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-mock-server:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Start mock release server
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .tmp | Out-Null
+          $process = Start-Process -FilePath node -ArgumentList "scripts/mock-release-server.js" -PassThru -RedirectStandardOutput ".tmp/mock-release-server.log" -RedirectStandardError ".tmp/mock-release-server.err.log"
+          Set-Content -Path .tmp/mock-release-server.pid -Value $process.Id
+
+      - name: Wait for mock server
+        shell: pwsh
+        run: |
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              Invoke-RestMethod -Uri "http://127.0.0.1:5000/healthz" | Out-Null
+              exit 0
+            } catch {
+              Start-Sleep -Seconds 1
+            }
+          }
+          if (Test-Path .tmp/mock-release-server.log) {
+            Get-Content .tmp/mock-release-server.log
+          }
+          if (Test-Path .tmp/mock-release-server.err.log) {
+            Get-Content .tmp/mock-release-server.err.log
+          }
+          throw "Mock server failed to start"
+
+      - name: Create test artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Set-Content -Path dist/mock-artifact.txt -Value "hello from mock server test"
+
+      - name: Upload artifact to mock release server
+        id: upload
+        uses: ./
+        with:
+          release-server-url: http://127.0.0.1:5000
+          api-key: test-master-key
+          target-name: ci/release-action
+          release-id: mock-${{ github.run_id }}-${{ github.run_attempt }}
+          file-path: dist/mock-artifact.txt
+          content-type: text/plain
+          alias: latest
+          verify: true
+
+      - name: Validate uploaded content
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "${{ steps.upload.outputs.release-download-url }}" -OutFile .tmp/downloaded-artifact.txt
+          $expected = [System.IO.File]::ReadAllText("dist/mock-artifact.txt")
+          $actual = [System.IO.File]::ReadAllText(".tmp/downloaded-artifact.txt")
+          if ($expected -ne $actual) {
+            throw "Downloaded artifact content did not match uploaded artifact"
+          }
+
+      - name: Print mock server log
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path .tmp/mock-release-server.log) {
+            Get-Content .tmp/mock-release-server.log
+          }
+          if (Test-Path .tmp/mock-release-server.err.log) {
+            Get-Content .tmp/mock-release-server.err.log
+          }
+
+      - name: Stop mock server
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path .tmp/mock-release-server.pid) {
+            $pid = Get-Content .tmp/mock-release-server.pid
+            if ($pid) {
+              Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+            }
+          }

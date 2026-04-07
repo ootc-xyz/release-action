@@ -1,0 +1,56 @@
+name: Upload To Release Server
+description: Upload a binary artifact to a release server using its presigned upload flow.
+author: OpenAI
+
+inputs:
+  release-server-url:
+    description: Base URL for the release server, for example https://releases.example.com
+    required: true
+  api-key:
+    description: Master API key used for authenticated release server API requests
+    required: true
+  target-name:
+    description: Target software name in scope/project form
+    required: true
+  release-id:
+    description: Release identifier to publish under
+    required: true
+  file-path:
+    description: Path to the local file to upload
+    required: true
+  file-name:
+    description: Basename to publish as; defaults to the basename of file-path
+    required: false
+    default: ""
+  content-type:
+    description: Content type declared when requesting the presigned upload
+    required: false
+    default: application/octet-stream
+  alias:
+    description: Optional alias to point at the uploaded release, for example latest
+    required: false
+    default: ""
+  verify:
+    description: Whether to verify the release metadata and public download URL after upload
+    required: false
+    default: "true"
+
+outputs:
+  download-url:
+    description: Public release download URL for the uploaded file
+  release-download-url:
+    description: Public release download URL for the uploaded file
+  alias-download-url:
+    description: Public alias download URL when alias is set
+  upload-url:
+    description: Presigned object storage upload URL returned by the release server
+  file-name:
+    description: Published basename for the uploaded artifact
+
+runs:
+  using: node24
+  main: dist/index.js
+
+branding:
+  icon: upload-cloud
+  color: blue

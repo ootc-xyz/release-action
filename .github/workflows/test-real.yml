@@ -1,0 +1,54 @@
+name: Test Real Release Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-real-server:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate required secrets
+        shell: pwsh
+        env:
+          RELEASE_SERVER_URL: ${{ secrets.RELEASE_SERVER_URL }}
+          RELEASE_SERVER_API_KEY: ${{ secrets.RELEASE_SERVER_API_KEY }}
+        run: |
+          if (-not $env:RELEASE_SERVER_URL) { throw "Missing secret RELEASE_SERVER_URL" }
+          if (-not $env:RELEASE_SERVER_API_KEY) { throw "Missing secret RELEASE_SERVER_API_KEY" }
+
+      - name: Create test artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Set-Content -Path dist/test-artifact.txt -Value "hello from github actions"
+
+      - name: Upload artifact to real release server
+        id: upload
+        uses: ./
+        with:
+          release-server-url: ${{ secrets.RELEASE_SERVER_URL }}
+          api-key: ${{ secrets.RELEASE_SERVER_API_KEY }}
+          target-name: ci/release-action
+          release-id: test-${{ github.run_id }}-${{ github.run_attempt }}
+          file-path: dist/test-artifact.txt
+          file-name: test-artifact-${{ github.run_id }}-${{ github.run_attempt }}.txt
+          content-type: text/plain
+          alias: latest-ci
+          verify: true
+
+      - name: Print URLs
+        shell: pwsh
+        run: |
+          Write-Host "Release URL: ${{ steps.upload.outputs.release-download-url }}"
+          Write-Host "Alias URL: ${{ steps.upload.outputs.alias-download-url }}"
