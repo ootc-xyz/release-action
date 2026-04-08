@@ -36,6 +36,32 @@ function normalizeBoolean(value, name) {
   throw new Error(`${name} must be a boolean-like value, got: ${value}`);
 }
 
+function parseAliases(aliasName, aliasesInput) {
+  const items = [];
+
+  if (aliasName) {
+    items.push(aliasName);
+  }
+
+  if (aliasesInput) {
+    items.push(...aliasesInput.split(/[\n,]/));
+  }
+
+  const normalized = [];
+  const seen = new Set();
+
+  for (const item of items) {
+    const alias = item.trim();
+    if (!alias || seen.has(alias)) {
+      continue;
+    }
+    seen.add(alias);
+    normalized.push(alias);
+  }
+
+  return normalized;
+}
+
 function parseTargetName(targetName) {
   const segments = targetName.split("/");
   if (segments.length !== 2 || !segments[0] || !segments[1]) {
@@ -111,6 +137,7 @@ async function main() {
   const inputFileName = getInput("file-name");
   const contentType = getInput("content-type") || "application/octet-stream";
   const aliasName = getInput("alias");
+  const aliasesInput = getInput("aliases");
   const verify = normalizeBoolean(getInput("verify") || "true", "verify");
 
   const { softwareScope, softwareProject } = parseTargetName(targetName);
@@ -122,6 +149,7 @@ async function main() {
 
   const fileName = inputFileName || path.basename(filePath);
   ensureBasename(fileName);
+  const aliases = parseAliases(aliasName, aliasesInput);
 
   const uploadSessionUrl = joinUrl(
     releaseServerUrl,
@@ -168,12 +196,12 @@ async function main() {
   info("Upload completed");
 
   const releaseDownloadUrl = joinUrl(releaseServerUrl, uploadResponse.downloadUrl);
-  let aliasDownloadUrl = "";
+  const aliasDownloadUrls = [];
 
-  if (aliasName) {
+  for (const alias of aliases) {
     const aliasUrl = joinUrl(
       releaseServerUrl,
-      `/api/v1/software/${encodeURIComponent(softwareScope)}/${encodeURIComponent(softwareProject)}/aliases/${encodeURIComponent(aliasName)}`,
+      `/api/v1/software/${encodeURIComponent(softwareScope)}/${encodeURIComponent(softwareProject)}/aliases/${encodeURIComponent(alias)}`,
     );
 
     await requestJson(aliasUrl, {
@@ -185,12 +213,12 @@ async function main() {
       body: JSON.stringify({ release_id: releaseId }),
     });
 
-    aliasDownloadUrl = joinUrl(
+    aliasDownloadUrls.push(joinUrl(
       releaseServerUrl,
-      `/download/${encodeURIComponent(softwareScope)}/${encodeURIComponent(softwareProject)}/${encodeURIComponent(aliasName)}/${encodeURIComponent(fileName)}`,
-    );
+      `/download/${encodeURIComponent(softwareScope)}/${encodeURIComponent(softwareProject)}/${encodeURIComponent(alias)}/${encodeURIComponent(fileName)}`,
+    ));
 
-    info(`Alias updated: ${aliasName}`);
+    info(`Alias updated: ${alias}`);
   }
 
   if (verify) {
@@ -201,13 +229,14 @@ async function main() {
     await requestNoBody(releaseMetadataUrl);
     await verifyDownloadUrl(releaseDownloadUrl);
 
-    if (aliasName) {
+    for (let i = 0; i < aliases.length; i += 1) {
+      const alias = aliases[i];
       const aliasMetadataUrl = joinUrl(
         releaseServerUrl,
-        `/api/v1/software/${encodeURIComponent(softwareScope)}/${encodeURIComponent(softwareProject)}/${encodeURIComponent(aliasName)}`,
+        `/api/v1/software/${encodeURIComponent(softwareScope)}/${encodeURIComponent(softwareProject)}/${encodeURIComponent(alias)}`,
       );
       await requestNoBody(aliasMetadataUrl);
-      await verifyDownloadUrl(aliasDownloadUrl);
+      await verifyDownloadUrl(aliasDownloadUrls[i]);
     }
 
     info("Verification completed");
@@ -215,12 +244,13 @@ async function main() {
 
   setOutput("download-url", releaseDownloadUrl);
   setOutput("release-download-url", releaseDownloadUrl);
-  setOutput("alias-download-url", aliasDownloadUrl);
+  setOutput("alias-download-url", aliasDownloadUrls[0] || "");
+  setOutput("alias-download-urls", aliasDownloadUrls.join("\n"));
   setOutput("upload-url", uploadUrl);
   setOutput("file-name", fileName);
 
   info(`Release URL: ${releaseDownloadUrl}`);
-  if (aliasDownloadUrl) {
+  for (const aliasDownloadUrl of aliasDownloadUrls) {
     info(`Alias URL: ${aliasDownloadUrl}`);
   }
 }

@@ -22,7 +22,8 @@ Verification follows the release-server guideline: it checks the release metadat
 | `file-path` | yes |  | Path to the local file to upload |
 | `file-name` | no | basename of `file-path` | Published filename; must be a basename, not a path |
 | `content-type` | no | `application/octet-stream` | Content type passed to the presign endpoint |
-| `alias` | no | empty | Alias to move to this release, such as `latest` |
+| `alias` | no | empty | Single alias to move to this release, such as `latest` |
+| `aliases` | no | empty | Comma- or newline-separated aliases to move to this release |
 | `verify` | no | `true` | Verify the release metadata and public download URL after upload |
 
 ## Outputs
@@ -31,7 +32,8 @@ Verification follows the release-server guideline: it checks the release metadat
 | --- | --- |
 | `download-url` | Public release download URL for the uploaded file |
 | `release-download-url` | Same as `download-url` |
-| `alias-download-url` | Public alias download URL when `alias` is set |
+| `alias-download-url` | Public alias download URL for the first configured alias |
+| `alias-download-urls` | Newline-separated public alias download URLs for all configured aliases |
 | `upload-url` | Presigned object storage upload URL returned by the release server |
 | `file-name` | Published basename for the uploaded artifact |
 
@@ -74,12 +76,13 @@ jobs:
           release-id: ${{ env.RELEASE_ID }}
           file-path: dist/widget-linux-amd64.tar.gz
           content-type: application/gzip
-          alias: latest
+          aliases: latest,stable
 
       - name: Print URLs
         run: |
           echo "Release URL: ${{ steps.upload.outputs.release-download-url }}"
-          echo "Latest URL: ${{ steps.upload.outputs.alias-download-url }}"
+          echo "Primary alias URL: ${{ steps.upload.outputs.alias-download-url }}"
+          echo "${{ steps.upload.outputs.alias-download-urls }}"
 ```
 
 ## Notes
@@ -89,3 +92,4 @@ jobs:
 - The artifact upload goes to the returned `upload-url`, not back to the release server API.
 - The action itself runs on Node and does not require shell-specific tooling.
 - Verification checks that the public download URL is reachable without relying on a client `HEAD` request, because some presigned object-storage URLs are signed only for `GET`.
+- `aliases` accepts either `latest,stable` or a multi-line value; empty items are ignored and duplicates are removed.
